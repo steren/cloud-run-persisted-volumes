@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GCS Sidecar Shared Volume Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #020617 100%);
+      --accent-primary: #818cf8;
+      --accent-hover: #4f46e5;
+      --accent-glow: rgba(129, 140, 248, 0.15);
+      --glass-bg: rgba(30, 41, 59, 0.45);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --card-radius: 16px;
+      --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow-x: hidden;
+      padding: 24px;
+    }
+
+    /* Soft glowing background orbs */
+    .bg-orb {
+      position: absolute;
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0) 70%);
+      z-index: -1;
+      filter: blur(40px);
+    }
+    .orb-1 { top: -10%; left: -10%; }
+    .orb-2 { bottom: -10%; right: -10%; }
+
+    /* Layout Wrapper */
+    .app-container {
+      width: 100%;
+      max-width: 1100px;
+      height: 750px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--card-radius);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: fadeIn 0.8s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Header */
+    header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.3);
+    }
+
+    .header-title h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      background: linear-gradient(90deg, #e0e7ff, var(--accent-primary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-title p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .badge {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      padding: 6px 12px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      background-color: #10b981;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    /* Workspace Layout */
+    .workspace {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Left Sidebar: File Browser */
+    .sidebar {
+      width: 320px;
+      border-right: 1px solid var(--glass-border);
+      display: flex;
+      flex-direction: column;
+      background: rgba(15, 23, 42, 0.15);
+    }
+
+    .sidebar-actions {
+      padding: 16px;
+      display: flex;
+      gap: 10px;
+      border-bottom: 1px solid var(--glass-border);
+    }
+
+    .input-field {
+      flex: 1;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.9rem;
+      outline: none;
+      transition: var(--transition-smooth);
+    }
+
+    .input-field:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .btn {
+      background: var(--accent-primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-family: inherit;
+      font-weight: 500;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn-secondary {
+      background: rgba(148, 163, 184, 0.1);
+      border: 1px solid var(--glass-border);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(148, 163, 184, 0.2);
+    }
+
+    .file-list-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .file-list-container::-webkit-scrollbar {
+      width: 6px;
+    }
+    .file-list-container::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+    }
+
+    .file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: var(--transition-smooth);
+      margin-bottom: 6px;
+      border: 1px solid transparent;
+    }
+
+    .file-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .file-item.active {
+      background: rgba(129, 140, 248, 0.08);
+      border-color: rgba(129, 140, 248, 0.2);
+    }
+
+    .file-info {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      overflow: hidden;
+      flex: 1;
+    }
+
+    .file-name {
+      font-weight: 500;
+      font-size: 0.9rem;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .file-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-delete {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+      transition: var(--transition-smooth);
+      opacity: 0;
+    }
+
+    .file-item:hover .btn-delete {
+      opacity: 1;
+    }
+
+    .btn-delete:hover {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+    }
+
+    .empty-state {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    /* Right Panel: Editor */
+    .editor-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: rgba(15, 23, 42, 0.05);
+    }
+
+    .editor-header {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 73px;
+    }
+
+    .active-file-title {
+      font-weight: 600;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .active-file-title span {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--accent-primary);
+      background: rgba(129, 140, 248, 0.1);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+
+    .editor-body {
+      flex: 1;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .editor-textarea {
+      flex: 1;
+      background: transparent;
+      border: none;
+      resize: none;
+      outline: none;
+      color: #e2e8f0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      line-height: 1.6;
+      padding: 24px;
+      width: 100%;
+      height: 100%;
+    }
+
+    .editor-textarea::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    .editor-textarea::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 5px;
+    }
+    .editor-textarea::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .status-toast {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid var(--glass-border);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .status-toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .status-toast.success {
+      border-color: rgba(16, 185, 129, 0.3);
+      color: #34d399;
+    }
+
+    .status-toast.error {
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #f87171;
+    }
+
+    .editor-placeholder {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      gap: 16px;
+      padding: 40px;
+      text-align: center;
+    }
+
+    .editor-placeholder svg {
+      width: 64px;
+      height: 64px;
+      color: rgba(129, 140, 248, 0.2);
+    }
+
+    /* Footer Stats & Info */
+    .app-footer {
+      padding: 14px 24px;
+      border-top: 1px solid var(--glass-border);
+      background: rgba(15, 23, 42, 0.2);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .footer-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .footer-link {
+      color: var(--accent-primary);
+      text-decoration: none;
+      transition: var(--transition-smooth);
+    }
+
+    .footer-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Decorative Glowing Background Orbs -->
+  <div class="bg-orb orb-1"></div>
+  <div class="bg-orb orb-2"></div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header>
+      <div class="header-title">
+        <h1>
+          <svg style="width: 24px; height: 24px; fill: currentColor" viewBox="0 0 24 24">
+            <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.41 2.78 2.96 0 1.65-1.35 3-3 3zm-5.55-8h-2.9v3H8l4 4 4-4h-2.55z"/>
+          </svg>
+          GCS Shared Volume Dashboard
+        </h1>
+        <p>Example Main App connected to GCS Sidecar shared emptyDir</p>
+      </div>
+      <div class="badge">
+        <span class="badge-dot"></span>
+        Shared Volume Synced
+      </div>
+    </header>
+
+    <!-- Workspace Layout -->
+    <div class="workspace">
+      <!-- Left Sidebar: File Browser -->
+      <div class="sidebar">
+        <div class="sidebar-actions">
+          <input type="text" id="new-filename-input" class="input-field" placeholder="filename.txt" autocomplete="off">
+          <button id="btn-create-file" class="btn" title="Create File">
+            <svg style="width: 18px; height: 18px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="file-list-container" id="file-list">
+          <!-- Populated dynamically -->
+          <div class="empty-state">Loading files...</div>
+        </div>
+      </div>
+
+      <!-- Right Panel: Editor -->
+      <div class="editor-container">
+        <!-- Editor Header -->
+        <div class="editor-header" id="editor-header-bar" style="display: none;">
+          <div class="active-file-title">
+            Editing <span id="active-file-name">file.txt</span>
+          </div>
+          <button id="btn-save-file" class="btn">
+            <svg style="width: 16px; height: 16px; fill: currentColor" viewBox="0 0 24 24">
+              <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/>
+            </svg>
+            Save File
+          </button>
+        </div>
+
+        <!-- Editor Body -->
+        <div class="editor-body">
+          <div id="editor-placeholder-view" class="editor-placeholder">
+            <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+            </svg>
+            <h3>No File Open</h3>
+            <p>Select a file from the sidebar, or create a new one to begin editing.</p>
+          </div>
+
+          <textarea id="editor-textarea-field" class="editor-textarea" style="display: none;" placeholder="Type file contents here..."></textarea>
+
+          <!-- Toast notification for status feedback -->
+          <div id="status-toast" class="status-toast"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="app-footer">
+      <div class="footer-left">
+        <div class="footer-item">
+          <span>Active Mount: <strong>/data</strong></span>
+        </div>
+        <div class="footer-item">
+          <span>Sync Mode: <strong style="color: var(--accent-primary);">Bidirectional Sync (Always-Delete)</strong></span>
+        </div>
+      </div>
+      <div>
+        <span>GCS Sidecar Integration &copy; 2026</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Elements
+    const fileList = document.getElementById('file-list');
+    const newFilenameInput = document.getElementById('new-filename-input');
+    const btnCreateFile = document.getElementById('btn-create-file');
+    const btnSaveFile = document.getElementById('btn-save-file');
+    const editorHeaderBar = document.getElementById('editor-header-bar');
+    const editorPlaceholderView = document.getElementById('editor-placeholder-view');
+    const editorTextareaField = document.getElementById('editor-textarea-field');
+    const activeFileName = document.getElementById('active-file-name');
+    const statusToast = document.getElementById('status-toast');
+
+    let currentFile = null;
+
+    // Toast notification handler
+    function showToast(message, type = 'success') {
+      statusToast.innerText = message;
+      statusToast.className = `status-toast show ${type}`;
+      setTimeout(() => {
+        statusToast.classList.remove('show');
+      }, 3000);
+    }
+
+    // Format bytes to readable size
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    // Format ISO date
+    function formatDate(dateStr) {
+      const d = new Date(dateStr);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    // Load list of files
+    async function loadFileList() {
+      try {
+        const response = await fetch('/api/files');
+        const data = await response.json();
+        
+        if (!data.success) {
+          fileList.innerHTML = `<div class="empty-state" style="color: #ef4444;">Error: ${data.error}</div>`;
+          return;
+        }
+
+        if (data.files.length === 0) {
+          fileList.innerHTML = '<div class="empty-state">No files on shared volume</div>';
+          return;
+        }
+
+        fileList.innerHTML = '';
+        data.files.forEach(file => {
+          const fileItem = document.createElement('div');
+          fileItem.className = `file-item ${currentFile === file.name ? 'active' : ''}`;
+          fileItem.onclick = () => openFile(file.name);
+
+          fileItem.innerHTML = `
+            <div class="file-info">
+              <div class="file-name" title="${file.name}">${file.name}</div>
+              <div class="file-meta">
+                <span>${formatBytes(file.size)}</span>
+                <span>&bull;</span>
+                <span>${formatDate(file.updatedAt)}</span>
+              </div>
+            </div>
+            <button class="btn-delete" title="Delete from GCS and Local" onclick="event.stopPropagation(); deleteFile('${file.name}')">
+              <svg style="width: 16px; height: 16px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.117 0 00-3 0"/>
+              </svg>
+            </button>
+          `;
+          fileList.appendChild(fileItem);
+        });
+      } catch (err) {
+        fileList.innerHTML = `<div class="empty-state" style="color: #ef4444;">Connection failed</div>`;
+      }
+    }
+
+    // Open file
+    async function openFile(filename) {
+      try {
+        const response = await fetch(`/api/files/${encodeURIComponent(filename)}`);
+        const data = await response.json();
+        
+        if (!data.success) {
+          showToast(data.error, 'error');
+          return;
+        }
+
+        currentFile = data.name;
+        activeFileName.innerText = data.name;
+        editorTextareaField.value = data.content;
+
+        // Toggle UI
+        editorPlaceholderView.style.display = 'none';
+        editorTextareaField.style.display = 'block';
+        editorHeaderBar.style.display = 'flex';
+
+        // Update list active highlights
+        const items = document.querySelectorAll('.file-item');
+        items.forEach(item => {
+          const nameEl = item.querySelector('.file-name');
+          if (nameEl && nameEl.innerText === currentFile) {
+            item.classList.add('active');
+          } else {
+            item.classList.remove('active');
+          }
+        });
+      } catch (err) {
+        showToast('Failed to load file contents', 'error');
+      }
+    }
+
+    // Create file
+    btnCreateFile.onclick = async () => {
+      let name = newFilenameInput.value.trim();
+      if (!name) {
+        showToast('Please enter a filename', 'error');
+        return;
+      }
+      if (!name.endsWith('.txt') && !name.endsWith('.json') && !name.endsWith('.md')) {
+        name += '.txt';
+      }
+
+      try {
+        const response = await fetch(`/api/files/${encodeURIComponent(name)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: `// Welcome to ${name}\n// Created on shared Cloud Run volume!\n` })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+          newFilenameInput.value = '';
+          showToast(`Created file: ${name}`);
+          await loadFileList();
+          openFile(name);
+        } else {
+          showToast(data.error, 'error');
+        }
+      } catch (err) {
+        showToast('Failed to create file', 'error');
+      }
+    };
+
+    // Trigger create file on Enter key
+    newFilenameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        btnCreateFile.click();
+      }
+    });
+
+    // Save current file
+    btnSaveFile.onclick = async () => {
+      if (!currentFile) return;
+      const content = editorTextareaField.value;
+
+      try {
+        const response = await fetch(`/api/files/${encodeURIComponent(currentFile)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+          showToast('File saved successfully! (Synced to GCS)');
+          loadFileList();
+        } else {
+          showToast(data.error, 'error');
+        }
+      } catch (err) {
+        showToast('Failed to save file', 'error');
+      }
+    };
+
+    // Delete file
+    async function deleteFile(filename) {
+      if (!confirm(`Are you sure you want to delete "${filename}"? This will also delete it from your GCS bucket on the next sidecar sync interval.`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/files/${encodeURIComponent(filename)}`, {
+          method: 'DELETE'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+          showToast(`Deleted "${filename}" successfully.`);
+          
+          if (currentFile === filename) {
+            currentFile = null;
+            editorPlaceholderView.style.display = 'flex';
+            editorTextareaField.style.display = 'none';
+            editorHeaderBar.style.display = 'none';
+          }
+          
+          loadFileList();
+        } else {
+          showToast(data.error, 'error');
+        }
+      } catch (err) {
+        showToast('Failed to delete file', 'error');
+      }
+    }
+
+    // Initial load
+    loadFileList();
+  </script>
+</body>
+</html>

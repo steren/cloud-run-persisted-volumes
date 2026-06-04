@@ -1,0 +1,87 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: gcs-sidecar-service
+  namespace: ${PROJECT_ID}
+  labels:
+    cloud.googleapis.com/location: ${REGION}
+  annotations:
+    # Use manual scaling mode with exactly 1 instance to avoid multi-instance split-brain sync issues
+    run.googleapis.com/scalingMode: manual
+    run.googleapis.com/manualInstanceCount: "1"
+    # Disable IAM invoker check to allow unauthenticated (public) access to the service
+    run.googleapis.com/invoker-iam-disabled: "true"
+spec:
+  template:
+    metadata:
+      annotations:
+        # Disable CPU throttling (always allocate CPU) so background sidecar loops continue working between requests
+        run.googleapis.com/cpu-throttling: "false"
+        # Enable startup CPU boost to allocate additional CPU on instance start and decrease cold start times
+        run.googleapis.com/startup-cpu-boost: "true"
+        # Define container startup dependencies.
+        # This tells Cloud Run to wait for 'gcs-sidecar' to pass its startupProbe
+        # before starting the 'main-app' container.
+        run.googleapis.com/container-dependencies: '{"main-app": ["gcs-sidecar"]}'
+    spec:
+      # Use an in-memory shared volume (backed by tmpfs)
+      volumes:
+        - name: shared-data
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi # Adjust based on data size needs
+
+      containers:
+        # 1. Main Application Container (Ingress)
+        - name: main-app
+          image: ${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/main-app:latest
+          ports:
+            - containerPort: 8080 # Incoming user traffic is routed here
+          resources:
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: shared-data
+              mountPath: /data # Mount the shared volume locally
+
+        # 2. GCS Synchronizer Sidecar Container
+        - name: gcs-sidecar
+          image: ${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/gcs-sidecar:latest
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          env:
+            - name: GCS_BUCKET
+              value: "${GCS_BUCKET}" # Change to your actual GCS bucket
+            - name: GCS_PREFIX
+              value: "app-shared-data/"     # Path prefix in GCS
+            - name: SHARED_DIR
+              value: "/data"                # Must match volume mount path
+            - name: SYNC_INTERVAL
+              value: "30s"                  # How often to check for modifications and sync to GCS
+            - name: READY_PORT
+              value: "9090"                 # Port for health and ready probes
+          volumeMounts:
+            - name: shared-data
+              mountPath: /data # Access the exact same shared volume
+
+          # Startup Probe: Cloud Run checks this endpoint to determine when the container is "healthy".
+          # Since /ready returns 503 during the initial GCS download and transitions to 200 only
+          # upon completion, this blocks the starting of 'main-app' until the data is fully restored.
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: 9090
+            initialDelaySeconds: 2
+            periodSeconds: 3
+            failureThreshold: 30 # Gives the sidecar 90 seconds (30 * 3) to download initial data from GCS
+
+          # Liveness Probe: Monitors the sidecar health periodically.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9090
+            periodSeconds: 15
+            failureThreshold: 3

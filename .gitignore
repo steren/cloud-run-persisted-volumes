@@ -1,0 +1,30 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+example/node_modules/
+
+# Go
+gcs-sidecar
+gcs-sidecar-test
+example-app-test
+*.out
+*.test
+
+# Generated Deployment Files
+service.yaml
+
+# Local Testing Shared Directories
+data/
+example/data/
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
