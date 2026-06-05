@@ -394,7 +394,7 @@
       padding: 12px;
       text-align: center;
       background: rgba(99, 102, 241, 0.02);
-      cursor: pointer;
+      cursor: default;
       transition: var(--transition-smooth);
     }
 
@@ -412,6 +412,24 @@
     .upload-zone-hint p {
       font-size: 0.75rem;
       color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .upload-zone-buttons {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 6px;
+    }
+
+    .btn-mini {
+      padding: 5px 10px;
+      font-size: 0.75rem;
+      border-radius: 6px;
+    }
+
+    .hidden-input {
+      display: none !important;
     }
 
     /* Drag and drop Overlay Dropzone */
@@ -1105,10 +1123,19 @@
             </div>
 
             <!-- Drag and Drop Overlay Trigger Banner -->
-            <div class="upload-zone-hint" onclick="document.getElementById('hidden-file-input').click()">
+            <div class="upload-zone-hint">
               <i class="fa-solid fa-cloud-arrow-up"></i>
-              <p><strong>Drag & Drop</strong> files/folders here<br>or click to upload</p>
-              <input type="file" id="hidden-file-input" multiple style="display: none;" onchange="handleFileInputSelect(event)">
+              <p><strong>Drag & Drop</strong> files/folders here</p>
+              <div class="upload-zone-buttons">
+                <button class="btn btn-secondary btn-mini" onclick="document.getElementById('hidden-file-input').click()">
+                  <i class="fa-solid fa-file"></i> Upload Files
+                </button>
+                <button class="btn btn-secondary btn-mini" onclick="handleFolderUploadClick()">
+                  <i class="fa-solid fa-folder"></i> Upload Folder
+                </button>
+              </div>
+              <input type="file" id="hidden-file-input" class="hidden-input" multiple onchange="handleFileInputSelect(event)">
+              <input type="file" id="hidden-folder-input" class="hidden-input" webkitdirectory directory onchange="handleFolderInputSelect(event)">
             </div>
           </div>
 
@@ -1753,6 +1780,66 @@
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         // Standard file select elements do not always output relativePath / webkitRelativePath
+        const path = file.webkitRelativePath || file.name;
+        fileListToUpload.push({
+          file: file,
+          relativePath: path
+        });
+      }
+
+      await uploadFilesSequential(fileListToUpload);
+    }
+
+    // Modern Web API: File System Access API (showDirectoryPicker) for folder uploads
+    async function handleFolderUploadClick() {
+      if ('showDirectoryPicker' in window) {
+        try {
+          const dirHandle = await window.showDirectoryPicker();
+          const fileListToUpload = [];
+
+          async function readDirectory(handle, currentPath = '') {
+            for await (const entry of handle.values()) {
+              if (entry.kind === 'file') {
+                const file = await entry.getFile();
+                // Reconstruct full paths relative to the selected root directory
+                fileListToUpload.push({
+                  file: file,
+                  relativePath: currentPath ? `${currentPath}/${file.name}` : `${handle.name}/${file.name}`
+                });
+              } else if (entry.kind === 'directory') {
+                await readDirectory(entry, currentPath ? `${currentPath}/${entry.name}` : `${handle.name}/${entry.name}`);
+              }
+            }
+          }
+
+          progressFilesStatus.innerText = 'Scanning folder structures...';
+          await readDirectory(dirHandle);
+
+          if (fileListToUpload.length > 0) {
+            await uploadFilesSequential(fileListToUpload);
+          } else {
+            showToast('No files found in the selected folder.', 'error');
+          }
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            showToast('Folder select failed: ' + err.message, 'error');
+          }
+        }
+      } else {
+        // Fallback for Safari, Firefox, and older browsers
+        document.getElementById('hidden-folder-input').click();
+      }
+    }
+
+    // Fallback standard input folder selection (webkitdirectory)
+    async function handleFolderInputSelect(event) {
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+
+      const fileListToUpload = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        // webkitRelativePath represents folder/sub/file.txt
         const path = file.webkitRelativePath || file.name;
         fileListToUpload.push({
           file: file,
